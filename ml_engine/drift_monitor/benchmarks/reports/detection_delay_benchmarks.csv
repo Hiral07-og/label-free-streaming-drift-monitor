@@ -1,0 +1,5 @@
+drift_type,injection_index,first_detected_index,detection_delay_records,detected_successfully,final_alert_severity,detected_features
+ABRUPT,600,600,0,True,CRITICAL,"['sender_risk_score', 'location_entropy']"
+GRADUAL,600,600,0,True,CRITICAL,"['sender_risk_score', 'location_entropy']"
+RECURRING,150,150,0,True,CRITICAL,"['tx_amount', 'sender_tx_count_1h', 'sender_risk_score', 'location_entropy', 'dest_novelty_score', 'time_delta_last_tx']"
+FEATURE_SPECIFIC,600,600,0,True,CRITICAL,"['sender_risk_score', 'location_entropy']"
