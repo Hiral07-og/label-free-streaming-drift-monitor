@@ -2,6 +2,8 @@
 
 An enterprise-grade, memory-bounded machine learning monitoring system designed to detect continuous distribution drift, estimate model degradation without ground-truth labels, and govern model retraining in real-time streaming environments.
 
+> 📖 **Comprehensive Repository Index & Architecture Catalog**: See [INDEX.md](INDEX.md) for a complete, structured catalog of all mathematical formulas, bounded sketches, drift detection algorithms, 14 REST API endpoints, database schemas, and all 36 automated unit & integration test cases.
+
 ---
 
 ## 1. Project Overview
