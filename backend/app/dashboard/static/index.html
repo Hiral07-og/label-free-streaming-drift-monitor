@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Label-Free Streaming Drift Monitor | Studio</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h2>StreamDrift</h2>
+          <span>Bounded-Memory Monitor</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="tab-overview">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          Overview & Health
+        </button>
+        <button class="nav-item" data-tab="tab-univariate">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+          Feature Drift (Sketches)
+        </button>
+        <button class="nav-item" data-tab="tab-multivariate">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>
+          Multivariate (MMD & C2ST)
+        </button>
+        <button class="nav-item" data-tab="tab-cbpe">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Label-Free CBPE
+        </button>
+        <button class="nav-item" data-tab="tab-governance">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          Shadow Retraining
+        </button>
+        <button class="nav-item" data-tab="tab-simulator">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Stream Simulator
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="system-status-indicator">
+          <span class="status-dot pulse-green"></span>
+          <span>FastAPI & Engine UP</span>
+        </div>
+        <div class="links">
+          <a href="/docs" target="_blank">Swagger API</a>
+          <span class="sep">•</span>
+          <a href="/metrics" target="_blank">Prometheus</a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Header -->
+      <header class="top-header">
+        <div class="header-left">
+          <h1 id="page-title">Monitoring Overview & System Health</h1>
+          <p class="subtitle">Continuously validating transaction streams via streaming sketches, ADWIN, and CBPE</p>
+        </div>
+        <div class="header-right">
+          <div id="alert-banner" class="alert-badge severity-normal">
+            <span class="alert-icon">●</span>
+            <span id="alert-severity-text">STATUS: NORMAL</span>
+          </div>
+          <button class="btn btn-secondary" onclick="refreshAllData()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Refresh
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: OVERVIEW -->
+      <section id="tab-overview" class="tab-pane active">
+        <!-- KPI Cards Grid -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Active Alert Severity</div>
+            <div id="kpi-severity" class="kpi-value text-green">NORMAL</div>
+            <div id="kpi-composite" class="kpi-sub">Composite Score: 0.000</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Records Processed</div>
+            <div id="kpi-records" class="kpi-value">0</div>
+            <div id="kpi-uptime" class="kpi-sub">Uptime: 0s</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Ingest Throughput</div>
+            <div id="kpi-throughput" class="kpi-value">0.0</div>
+            <div class="kpi-sub">records / sec</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Memory Compression</div>
+            <div id="kpi-compression" class="kpi-value text-cyan">--</div>
+            <div id="kpi-mem-details" class="kpi-sub">Sketches: 0 KB | Window: 0 KB</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Estimated F1 (CBPE)</div>
+            <div id="kpi-f1" class="kpi-value text-purple">--</div>
+            <div id="kpi-baseline-f1" class="kpi-sub">Baseline: --</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Retrain Urgency</div>
+            <div id="kpi-urgency" class="kpi-value text-yellow">NONE</div>
+            <div id="kpi-rec-action" class="kpi-sub">Standard Monitoring</div>
+          </div>
+        </div>
+
+        <!-- Real-time Chart Section -->
+        <div class="content-row">
+          <div class="card chart-card">
+            <div class="card-header">
+              <h3>Live Performance & Confidence Trajectory</h3>
+              <span class="card-tag">CBPE vs Reference Baseline</span>
+            </div>
+            <div class="card-body">
+              <canvas id="performanceChart" height="90"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Alarms Table -->
+        <div class="card">
+          <div class="card-header">
+            <h3>Recent Drift Alarms (SQLite Audit Log)</h3>
+            <span class="card-tag" id="alarm-count-badge">0 events</span>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Record #</th>
+                  <th>Timestamp</th>
+                  <th>Severity</th>
+                  <th>Summary</th>
+                  <th>Affected Features</th>
+                  <th>Composite Score</th>
+                </tr>
+              </thead>
+              <tbody id="alarms-table-body">
+                <tr><td colspan="6" class="text-center">No drift alarms recorded yet. Data stream stationary.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: UNIVARIATE FEATURE DRIFT -->
+      <section id="tab-univariate" class="tab-pane">
+        <div class="card mb-4">
+          <div class="card-header">
+            <h3>Univariate Population Stability Index (PSI) Overview</h3>
+            <span class="card-tag">Threshold: PSI &gt; 0.1 (Warning), &gt; 0.25 (Significant Drift)</span>
+          </div>
+          <div class="card-body">
+            <canvas id="psiChart" height="80"></canvas>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Bounded-Memory Feature Sketches & Distribution Tests</h3>
+            <span class="card-tag">Welford • t-digest Quantiles • KS-Test • FDR Correction</span>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Feature Name</th>
+                  <th>PSI</th>
+                  <th>KS p-value</th>
+                  <th>FDR Significant</th>
+                  <th>Welford Mean</th>
+                  <th>t-digest Median (p50)</th>
+                  <th>t-digest 95th (p95)</th>
+                </tr>
+              </thead>
+              <tbody id="univariate-table-body">
+                <tr><td colspan="7" class="text-center">Loading feature sketches...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: MULTIVARIATE DRIFT -->
+      <section id="tab-multivariate" class="tab-pane">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h3>Maximum Mean Discrepancy (MMD)</h3>
+              <span class="card-tag">Kernel Permutation Test</span>
+            </div>
+            <div class="card-body stat-box">
+              <div class="stat-item">
+                <span class="stat-name">MMD² Statistic:</span>
+                <span id="mmd-stat" class="stat-val font-mono">0.00000</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-name">Empirical p-value:</span>
+                <span id="mmd-pvalue" class="stat-val font-mono">1.0000</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-name">Drift Confirmed:</span>
+                <span id="mmd-detected" class="stat-val font-bold text-green">FALSE</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-name">RBF Kernel Gamma:</span>
+                <span id="mmd-gamma" class="stat-val font-mono">--</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Classifier Two-Sample Test (C2ST)</h3>
+              <span class="card-tag">Discriminator ROC-AUC</span>
+            </div>
+            <div class="card-body stat-box">
+              <div class="stat-item">
+                <span class="stat-name">Cross-Validated ROC-AUC:</span>
+                <span id="c2st-auc" class="stat-val font-mono">0.5000</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-name">Null Hypothesis p-value:</span>
+                <span id="c2st-pvalue" class="stat-val font-mono">1.0000</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-name">Drift Confirmed:</span>
+                <span id="c2st-detected" class="stat-val font-bold text-green">FALSE</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-name">Sample Reservoir Size:</span>
+                <span id="reservoir-size" class="stat-val font-mono">500 tuples</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-4">
+          <div class="card-header">
+            <h3>Top Contributing Drift Features (C2ST Feature Importance)</h3>
+            <span class="card-tag">Distinguishing Reference from Streaming Window</span>
+          </div>
+          <div class="card-body">
+            <div id="c2st-features-list" class="badge-list">
+              <span class="text-muted">Awaiting multivariate test execution...</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: LABEL-FREE PERFORMANCE (CBPE) -->
+      <section id="tab-cbpe" class="tab-pane">
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">CBPE Accuracy</div>
+            <div id="cbpe-acc" class="kpi-value text-blue">--</div>
+            <div id="cbpe-acc-delta" class="kpi-sub">Baseline: --</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">CBPE Precision</div>
+            <div id="cbpe-prec" class="kpi-value text-blue">--</div>
+            <div id="cbpe-prec-delta" class="kpi-sub">Baseline: --</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">CBPE Recall</div>
+            <div id="cbpe-rec" class="kpi-value text-blue">--</div>
+            <div id="cbpe-rec-delta" class="kpi-sub">Baseline: --</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">CBPE F1-Score</div>
+            <div id="cbpe-f1" class="kpi-value text-purple">--</div>
+            <div id="cbpe-f1-delta" class="kpi-sub">Baseline: --</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">CBPE ROC-AUC</div>
+            <div id="cbpe-auc" class="kpi-value text-cyan">--</div>
+            <div id="cbpe-auc-delta" class="kpi-sub">Baseline: --</div>
+          </div>
+        </div>
+
+        <div class="grid-2 mt-4">
+          <!-- Submit Delayed Labels Panel -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Delayed Ground Truth Reconciliation</h3>
+              <span class="card-tag">Audit CBPE Accuracy vs Actuals</span>
+            </div>
+            <div class="card-body">
+              <p class="text-muted mb-3">
+                When actual outcomes arrive after delayed investigation, submit confirmed fraud labels to reconcile CBPE estimates against ground truth metrics.
+              </p>
+              <div class="btn-group">
+                <button class="btn btn-primary" onclick="submitSampleDelayedLabels()">
+                  Reconcile Recent 50 Labels
+                </button>
+              </div>
+              <div id="reconciliation-output" class="output-box mt-3">
+                No delayed labels reconciled yet.
+              </div>
+            </div>
+          </div>
+
+          <!-- Historical Evaluation Table -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Reconciliation History (SQLite)</h3>
+              <span class="card-tag">CBPE Error Bounds</span>
+            </div>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Sample</th>
+                    <th>Est. F1</th>
+                    <th>Actual F1</th>
+                    <th>F1 Error</th>
+                    <th>Tolerance</th>
+                  </tr>
+                </thead>
+                <tbody id="reconciliation-table-body">
+                  <tr><td colspan="5" class="text-center">No reconciliation records.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: SHADOW RETRAINING & GOVERNANCE -->
+      <section id="tab-governance" class="tab-pane">
+        <div class="card mb-4">
+          <div class="card-header">
+            <h3>Retraining Decision Engine</h3>
+            <span id="retrain-urgency-badge" class="badge badge-normal">Urgency: NONE</span>
+          </div>
+          <div class="card-body">
+            <div class="decision-box">
+              <div class="decision-reason">
+                <strong>Trigger Reason:</strong> <span id="retrain-reason">No drift detected. Active model is healthy.</span>
+              </div>
+              <div class="decision-action mt-2">
+                <strong>Recommended Action:</strong> <span id="retrain-action">Continue stream monitoring.</span>
+              </div>
+            </div>
+            <div class="mt-4">
+              <button class="btn btn-warning" onclick="triggerCandidateEvaluation()">
+                Evaluate Candidate Shadow Model
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Candidate Model Benchmark Results -->
+        <div id="candidate-review-section" class="card mb-4" style="display: none;">
+          <div class="card-header">
+            <h3>Shadow Model Validation Results</h3>
+            <span id="candidate-decision-badge" class="badge badge-warning">DECISION: PENDING</span>
+          </div>
+          <div class="card-body">
+            <div class="grid-2">
+              <div class="model-stat-card">
+                <h4>Active Production Model</h4>
+                <div id="active-model-metrics" class="metrics-dump font-mono">--</div>
+              </div>
+              <div class="model-stat-card">
+                <h4>Candidate Retrained Model (Shadow)</h4>
+                <div id="candidate-model-metrics" class="metrics-dump font-mono">--</div>
+              </div>
+            </div>
+
+            <div class="approval-panel mt-4">
+              <h4>Human-in-the-Loop Governance Sign-Off</h4>
+              <p class="text-muted">Promotion requires an authorized cryptographic approval token issued by ShadowModelEvaluator.</p>
+              <div class="form-row mt-2">
+                <input type="text" id="approval-token-input" placeholder="Approval Token" class="form-input font-mono" readonly>
+                <input type="text" id="approver-name-input" placeholder="Approver Name (e.g. Laxmi Singla)" class="form-input" value="Laxmi Singla (MLOps Lead)">
+                <button class="btn btn-success" onclick="approveCandidatePromotion()">Approve & Deploy to Production</button>
+              </div>
+              <div id="approval-status-message" class="status-msg mt-2"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Retrain Governance Audit Log -->
+        <div class="card">
+          <div class="card-header">
+            <h3>Retraining Governance Audit Trail</h3>
+            <span class="card-tag">Tamper-Evident Deployment Log</span>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Urgency</th>
+                  <th>Active F1</th>
+                  <th>Candidate F1</th>
+                  <th>Δ F1</th>
+                  <th>Decision</th>
+                  <th>Status</th>
+                  <th>Approved By</th>
+                </tr>
+              </thead>
+              <tbody id="retrain-audits-body">
+                <tr><td colspan="8" class="text-center">No retraining audits logged.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: STREAM SIMULATOR -->
+      <section id="tab-simulator" class="tab-pane">
+        <div class="card mb-4">
+          <div class="card-header">
+            <h3>Streaming Workload Generator & Drift Injection</h3>
+            <span class="card-tag">Interactive Test Scenarios</span>
+          </div>
+          <div class="card-body">
+            <p class="text-muted mb-4">
+              Inject synthetic transaction streams to test real-time ADWIN detection, bounded-memory sketches, CBPE degradation detection, and shadow retraining triggers.
+            </p>
+            <div class="button-toolbar">
+              <button class="btn btn-secondary" onclick="simulateStream('none', 150)">
+                <span class="btn-dot bg-green"></span>
+                Stream Stationary Traffic (150 tx)
+              </button>
+              <button class="btn btn-warning" onclick="simulateStream('gradual', 150)">
+                <span class="btn-dot bg-yellow"></span>
+                Inject Gradual Inflation Shift (150 tx)
+              </button>
+              <button class="btn btn-danger" onclick="simulateStream('abrupt', 150)">
+                <span class="btn-dot bg-red"></span>
+                Inject Abrupt Fraud Wave (150 tx)
+              </button>
+            </div>
+            <div id="sim-status" class="alert-box mt-3" style="display: none;"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Live Streaming Event Terminal</h3>
+            <button class="btn-link" onclick="clearTerminal()">Clear Terminal</button>
+          </div>
+          <div class="terminal-body" id="event-terminal">
+            <div class="term-line text-muted">[System] Monitor initialized and awaiting streaming transactions...</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
