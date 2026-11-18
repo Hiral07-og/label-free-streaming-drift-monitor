@@ -6,6 +6,7 @@ Prometheus text-format metrics exporter, and interactive web dashboard.
 
 from contextlib import asynccontextmanager
 import logging
+import os
 from pathlib import Path
 import time
 from typing import AsyncGenerator
@@ -18,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.app.config import settings
 from backend.app.routers import (
     alerts_router,
+    benchmarks_router,
     drift_router,
     performance_router,
     retrain_router,
@@ -42,20 +44,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global consumer
     logger.info("Starting up %s v%s...", settings.app_name, settings.app_version)
 
-    # Pre-initialize DriftService singleton
+    # Pre-initialize DriftService singleton (ML Engine + Sketches + SQLite)
     service = DriftService.get_instance()
     logger.info(
         "DriftService warmed up (baseline accuracy: %.3f)",
         service.monitor.baseline_metrics.accuracy if service.monitor.baseline_metrics else 0.0,
     )
 
-    # Initialize consumer worker
+    # Initialize and connect consumer worker to DriftService
     consumer = StreamingEventConsumer(drift_service=service)
     consumer.start()
+    service.attach_consumer(consumer)
+
+    # Optionally start continuous background auto-streaming
+    if os.getenv("AUTO_STREAM_ON_STARTUP", "false").lower() == "true":
+        rate = float(os.getenv("AUTO_STREAM_RATE", "5.0"))
+        mode = os.getenv("AUTO_STREAM_MODE", "none")
+        service.start_auto_stream(drift_mode=mode, rate_per_sec=rate)
 
     yield
 
     logger.info("Shutting down %s...", settings.app_name)
+    service.stop_auto_stream()
     if consumer:
         consumer.stop()
 
@@ -63,7 +73,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="Production-grade Label-Free Streaming Drift Monitor with Bounded-Memory Sketches, CBPE, and Retraining Triggers.",
+    description="Unified Label-Free Streaming Drift Monitor with Bounded-Memory Sketches, CBPE, Automated Retrain Triggers, and Experimental Benchmarks.",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -84,6 +94,7 @@ app.include_router(drift_router)
 app.include_router(performance_router)
 app.include_router(alerts_router)
 app.include_router(retrain_router)
+app.include_router(benchmarks_router)
 
 
 @app.get("/health", tags=["Health"])

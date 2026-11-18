@@ -64,48 +64,22 @@ flowchart TD
 
 ---
 
-## 3. Team Responsibilities & Project Roadmap
+## 3. Unified Project Components & Contributors
 
-| Role | Lead | Focus Area | Deliverable Status |
+This repository integrates both the **ML & Statistical Monitoring Engine** (`ml_engine/`) and the **Streaming Backend, API, Dashboard & Governance Layer** (`backend/`) into a single cohesive platform launched via [`main.py`](main.py).
+
+| Contributor | Role | Primary Subsystems | Status |
 | :--- | :--- | :--- | :---: |
-| **Person 1** | **Hiral** (ML & Statistical Monitoring Lead) | Mathematical core, bounded sketches, drift engines, CBPE, benchmarks | **100% Complete** |
-| **Person 2** | **Laxmi Singla** (Backend & Systems Lead) | Kafka streaming pipeline, FastAPI endpoints, Prometheus, Web Dashboard, Docker | **100% Complete** |
+| **Hiral** (`Hiral07-og`) | ML & Statistical Monitoring Lead | Bounded-memory sketches, streaming & multivariate drift detectors, CBPE, shadow model evaluator, benchmark suite | **100% Complete** |
+| **Laxmi Singla** (`BuildsByLaxmi`) | Streaming Systems & Backend Lead | Kafka/Redpanda producer & consumer, FastAPI REST APIs, SQLite audit store, interactive web dashboard, Prometheus & Docker | **100% Complete** |
 
-### Person 1 Deliverables Summary (Weeks 1 – 8)
-- [x] **Week 1**: Selected temporal fraud benchmark (`StreamingFinancialBenchmark`), trained Gradient Boosting model with Platt/Sigmoid probability calibration.
-- [x] **Week 2**: Implemented bounded sketches: Welford `RunningStats`, `TDigest` ($0.36\%$ mean quantile error), `CountMinSketch` with conservative update, `HyperLogLog` ($0.24\%$ error), and `ReservoirSampler`.
-- [x] **Week 3**: Implemented streaming univariate detectors: `ADWIN` and `PageHinkley`, alongside two-sample Kolmogorov-Smirnov (KS) and Population Stability Index (PSI).
-- [x] **Week 4**: Implemented multivariate drift detectors: Maximum Mean Discrepancy (`MMD`) with RBF kernel and Classifier Two-Sample Test (`C2ST`), with Benjamini-Hochberg FDR multiple testing correction.
-- [x] **Week 5**: Implemented Confidence-Based Performance Estimation (`CBPE`) and `DelayedGroundTruthEvaluator` ($1.04\%$ Accuracy MAE).
-- [x] **Week 6**: Implemented `DriftAlertEngine` (Severity levels), `RetrainingTrigger`, and `ShadowModelEvaluator` with governance approval tokens.
-- [x] **Week 7**: Engineered unified master `StreamingDriftMonitor` and authored `PERSON2_INTEGRATION_GUIDE.md`.
-- [x] **Week 8**: Built synthetic drift benchmark suite (`drift_generator.py`, `run_benchmarks.py`) generating CSV and Markdown reports across all scenarios.
-
-### Person 2 Deliverables Summary (Backend & Systems Lead - Laxmi Singla)
-- [x] **Streaming Event Pipeline**: Built `StreamingEventProducer` and background `StreamingEventConsumer` supporting Apache Kafka / Redpanda streaming topics as well as a zero-dependency in-memory asynchronous worker queue and traffic generator simulator.
-- [x] **FastAPI REST API Suite**: Implemented high-throughput REST endpoints under `/api/v1`:
-  - `POST /api/v1/stream/record`: Real-time synchronous transaction ingestion with O(1) sketch updates and streaming ADWIN change-point detection.
-  - `POST /api/v1/stream/batch`: High-throughput micro-batch ingestion with processing throughput calculation.
-  - `POST /api/v1/stream/simulate`: Injects controlled streaming workloads (`none`, `abrupt`, `gradual`).
-  - `GET /api/v1/drift/status`: Consolidated monitoring payload (throughput, records, sketch memory bytes, alert status).
-  - `GET /api/v1/drift/univariate`: Per-feature PSI, KS p-value, FDR corrected significance, running mean, and t-digest percentiles (p50, p95).
-  - `GET /api/v1/drift/multivariate`: Non-parametric MMD statistic and C2ST discriminator ROC-AUC with top contributing features.
-  - `GET /api/v1/performance/estimated`: Label-free CBPE estimated Accuracy, Precision, Recall, F1, and ROC-AUC.
-  - `POST /api/v1/performance/labels`: Ingests delayed investigative ground-truth labels and reconciles against CBPE estimates.
-  - `GET /api/v1/alerts/active` & `GET /api/v1/alerts/recommendation`: Real-time alert status and retraining recommendation.
-  - `POST /api/v1/retrain/evaluate-candidate`: Trains and evaluates shadow candidate model on fresh streaming records.
-  - `POST /api/v1/retrain/approve`: Cryptographic approval token verification for safe, governed production promotion.
-- [x] **Thread-Safe SQLite Persistence**: Engineered `DatabaseManager` tracking drift alarm events, performance evaluation errors, and shadow retraining governance audit trails.
-- [x] **Interactive Web Dashboard**: Built responsive, single-page application (`/` & `/dashboard`) styled in modern dark mode:
-  - Live KPI cards: Active Alert Severity, Throughput, Records Processed, Sketch Memory Compression Ratio, Estimated F1 vs Baseline F1.
-  - Real-time Chart.js interactive trajectory charts for Performance and Univariate PSI.
-  - Feature sketch distribution table with color-coded significance badges.
-  - Delayed ground-truth reconciliation panel.
-  - Interactive Model Promotion Governance modal with cryptographic approval token sign-off.
-  - Streaming workload simulator toolbar with live event terminal.
-- [x] **Prometheus Metrics Exporter**: Implemented `/metrics` endpoint returning Prometheus plain-text format counters and gauges for ingestion throughput, memory bytes, alert severity, composite score, feature PSIs, and CBPE metrics.
-- [x] **Production Deployment**: Created multi-stage `Dockerfile`, `docker-compose.yml` (FastAPI backend, Redpanda Kafka broker, Prometheus, Grafana), and `prometheus.yml`.
-- [x] **Backend Test Suite**: Developed 17 unit and integration tests (`backend/tests/`) covering all REST endpoints, streaming consumer queue, delayed reconciliation, and promotion governance (100% passing).
+### Integrated System Capabilities
+- [x] **Calibrated ML Baseline & Reference Engine**: Temporal fraud benchmark (`StreamingFinancialBenchmark`) + Elliptic Bitcoin loader with Platt/Sigmoid probability calibration.
+- [x] **5 Bounded-Memory Streaming Sketches**: Welford `RunningStats`, `TDigest` ($0.36\%$ mean quantile error), `CountMinSketch` with conservative update, `HyperLogLog` ($0.24\%$ cardinality error), and fixed-capacity `ReservoirSampler` — all live-monitored in the API and dashboard.
+- [x] **Multi-Signal Drift Detection**: Streaming univariate detectors (`ADWIN`, `PageHinkley`), windowed distribution tests (`KS-Test`, `PSI`) with Benjamini-Hochberg FDR multiple-testing correction, and multivariate detectors (`MMD` with Gaussian RBF kernel & `C2ST` discriminator AUC).
+- [x] **Label-Free Performance Estimation (CBPE) & Delayed Reconciliation**: Estimates Accuracy, Precision, Recall, F1, and ROC-AUC from calibrated confidences without labels, and tracks continuous estimation error when delayed ground-truth labels arrive.
+- [x] **Governed Retraining & Shadow Evaluation**: Severity-based alerting (`NORMAL`, `WARNING`, `CRITICAL`), retraining urgency triggers with guardrails, shadow candidate evaluation, and cryptographic approval token verification logged in SQLite.
+- [x] **Unified Streaming Backend & Live Dashboard**: Kafka/Redpanda + zero-dependency in-memory Producer/Consumer pipeline, 19 FastAPI endpoints across 6 routers (including live controlled drift simulation for all 5 drift regimes and live benchmark execution), interactive dark-mode Chart.js Web Dashboard, Prometheus `/metrics` exporter, and Docker Compose orchestration.
 
 ---
 
@@ -188,30 +162,34 @@ label-free-streaming-drift-monitor/
 │       ├── test_cbpe.py               # Unit tests for CBPE expectations & errors
 │       ├── test_retraining.py         # Unit tests for alert engine & shadow model
 │       └── test_streaming_monitor.py  # Integration tests for StreamingDriftMonitor
-├── backend/                           # Person 2: Streaming Backend & Systems
+├── backend/                           # Streaming Backend, API, Dashboard & Governance
 │   ├── app/
 │   │   ├── config.py                  # Server, Kafka, and storage configuration
-│   │   ├── main.py                    # FastAPI application, CORS, and Prometheus exporter
+│   │   ├── main.py                    # FastAPI application, CORS, lifespan & Prometheus exporter
 │   │   ├── schemas/                   # Pydantic schemas (events, drift, performance, alerts)
 │   │   ├── storage/                   # Thread-safe SQLite database manager
-│   │   ├── services/                  # Business logic (DriftService, AlertService)
-│   │   ├── streaming/                 # Kafka producer, consumer, and simulator
-│   │   ├── routers/                   # API routes (stream, drift, performance, alerts, retrain)
-│   │   └── dashboard/static/          # Interactive web dashboard (index.html, styles.css, app.js)
-│   ├── tests/                         # Backend test suite (API, streaming, alerts)
+│   │   ├── services/                  # Unified DriftService & AlertService
+│   │   ├── streaming/                 # Kafka/in-memory producer, consumer & simulator
+│   │   ├── routers/                   # API routers (stream, drift, performance, alerts, retrain, benchmarks)
+│   │   └── dashboard/static/          # Interactive Web Dashboard (index.html, styles.css, app.js)
+│   ├── tests/                         # Backend test suite (17 tests)
 │   └── requirements.txt               # Backend dependencies
+├── tests/
+│   └── test_e2e_integration.py        # Unified End-to-End integration tests (5 tests)
+├── main.py                            # Unified Master CLI (serve, demo, benchmark, test)
 ├── Dockerfile                         # Multi-stage production container image
 ├── docker-compose.yml                 # Orchestration (Backend, Redpanda Kafka, Prometheus, Grafana)
 ├── prometheus.yml                     # Prometheus scrape configuration
-├── run_person1_demo.py                # Person 1 complete ML engine demonstration
-├── run_person2_backend_demo.py        # Person 2 complete streaming backend demonstration
-├── requirements.txt                   # Production dependencies
+├── run_person1_demo.py                # ML engine standalone demonstration
+├── run_person2_backend_demo.py        # Backend standalone demonstration
+├── requirements.txt                   # Unified project dependencies
+├── INDEX.md                           # Complete repository index & catalog
 └── README.md                          # Project documentation
 ```
 
 ---
 
-## 6. Quickstart Guide
+## 6. Quickstart Guide (One-Command Unified Workflow)
 
 ### 1. Installation
 ```bash
@@ -224,45 +202,43 @@ python -m venv .venv
 # On Linux/macOS:
 # source .venv/bin/activate
 
-pip install -r requirements.txt -r backend/requirements.txt
+pip install -r requirements.txt
 ```
 
-### 2. Run All Unit & Integration Tests (36 Tests, 100% Passing)
+### 2. Run the Complete Unified Test Suite (41 Tests, 100% Passing)
 ```bash
-# Person 1 ML Engine Tests (19 tests)
-python -m unittest discover ml_engine/tests/
-
-# Person 2 Streaming Backend Tests (17 tests)
-python -m unittest discover backend/tests/
+python main.py test
 ```
 
-### 3. Run the Demonstration Scripts
+### 3. Run the Unified End-to-End System Showcase
 ```bash
-# Person 1: ML Engine, Sketches, CBPE, Drift Detectors & Benchmarks
-python run_person1_demo.py
-
-# Person 2: Streaming Ingestion, Prometheus Exporter, Alerts & Shadow Promotion
-python run_person2_backend_demo.py
+python main.py demo
 ```
 
-### 4. Launch the Interactive Web Dashboard & FastAPI Backend
+### 4. Launch the Unified Server & Interactive Web Dashboard
 ```bash
-python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+# Start server on standby (trigger scenarios from the UI):
+python main.py serve
+
+# Or launch with continuous live streaming enabled automatically:
+python main.py serve --auto-stream --rate 5
 ```
 Open your browser to:
-- **Interactive Dashboard**: [http://localhost:8000/dashboard](http://localhost:8000/dashboard)
+- **Interactive Web Dashboard**: [http://localhost:8000/dashboard](http://localhost:8000/dashboard)
 - **Interactive Swagger API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Prometheus Metrics Exporter**: [http://localhost:8000/metrics](http://localhost:8000/metrics)
 
-### 5. Launch Full Stack with Docker Compose
+### 5. Run the Controlled Experimental Benchmark Suite
+```bash
+python main.py benchmark
+```
+
+### 6. Launch Full Cloud-Ready Stack with Docker Compose
 ```bash
 docker-compose up -d
 ```
 Services available:
-- **FastAPI Backend & Dashboard**: [http://localhost:8000](http://localhost:8000)
+- **Unified App & Dashboard**: [http://localhost:8000](http://localhost:8000)
 - **Prometheus Metrics**: [http://localhost:9090](http://localhost:9090)
-- **Grafana Dashboards**: [http://localhost:3000](http://localhost:3000) (admin / admin)
+- **Grafana Dashboards**: [http://localhost:3000](http://localhost:3000) (`admin` / `admin`)
 - **Redpanda Streaming Broker**: `localhost:9092`
-
-### 4. Integration for Person 2 (Backend / Systems Lead)
-See [PERSON2_INTEGRATION_GUIDE.md](ml_engine/drift_monitor/PERSON2_INTEGRATION_GUIDE.md) for Kafka consumer integration patterns, FastAPI endpoint implementations (`GET /drift/status`, `POST /stream/record`), and Prometheus exporter mappings.

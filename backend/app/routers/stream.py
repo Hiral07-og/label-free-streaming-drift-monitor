@@ -23,7 +23,17 @@ class SimulationRequest(BaseModel):
     num_records: int = Field(default=150, ge=1, le=2000, description="Number of synthetic records to stream")
     drift_type: str = Field(
         default="none",
-        description="Scenario to inject: 'none' (stationary), 'abrupt' (fraud wave), or 'gradual' (inflation shift)",
+        description="Scenario to inject: 'none', 'abrupt', 'gradual', 'recurring', or 'feature_specific'",
+    )
+
+
+class AutoStreamRequest(BaseModel):
+    drift_mode: str = Field(
+        default="none",
+        description="Continuous stream mode: 'none', 'abrupt', or 'gradual'",
+    )
+    rate_per_sec: float = Field(
+        default=5.0, ge=0.5, le=100.0, description="Target emission rate in records per second"
     )
 
 
@@ -80,3 +90,38 @@ def simulate_scenario(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Simulation error: {str(e)}")
+
+
+@router.get("/consumer-status", summary="Get Streaming Pipeline & Consumer Status")
+def get_consumer_status(
+    service: DriftService = Depends(get_drift_service),
+) -> Dict[str, Any]:
+    """
+    Returns live runtime metrics for the connected Producer -> Consumer streaming pipeline.
+    """
+    return service.get_pipeline_status()
+
+
+@router.post("/auto-stream/start", summary="Start Continuous Background Auto-Streaming")
+def start_auto_stream(
+    request: AutoStreamRequest,
+    service: DriftService = Depends(get_drift_service),
+) -> Dict[str, Any]:
+    """
+    Starts continuous real-time event emission through StreamingEventProducer ->
+    StreamingEventConsumer -> StreamingDriftMonitor.
+    """
+    return service.start_auto_stream(
+        drift_mode=request.drift_mode,
+        rate_per_sec=request.rate_per_sec,
+    )
+
+
+@router.post("/auto-stream/stop", summary="Stop Continuous Background Auto-Streaming")
+def stop_auto_stream(
+    service: DriftService = Depends(get_drift_service),
+) -> Dict[str, Any]:
+    """
+    Cleanly stops background event emission.
+    """
+    return service.stop_auto_stream()

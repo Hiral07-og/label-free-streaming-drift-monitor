@@ -157,6 +157,7 @@ async function refreshAllData() {
     if (!statusRes.ok) return;
     const data = await statusRes.json();
     updateOverviewKPIs(data);
+    updateCategoricalSketches(data.categorical_sketches);
     updateMultivariateCard(data.multivariate_drift);
     updateCBPECard(data.performance_estimation, data.baseline_metrics);
     updateRetrainSection(data.retraining_recommendation);
@@ -187,6 +188,20 @@ async function refreshAllData() {
     if (reconRes.ok) {
       const reconData = await reconRes.json();
       updateReconciliationTable(reconData);
+    }
+
+    // Fetch Producer -> Consumer pipeline status
+    const pipeRes = await fetch('/api/v1/stream/consumer-status');
+    if (pipeRes.ok) {
+      const pipeData = await pipeRes.json();
+      updatePipelineStatus(pipeData);
+    }
+
+    // Fetch ML Engine Benchmark results (once or on refresh)
+    const benchRes = await fetch('/api/v1/benchmarks/results');
+    if (benchRes.ok) {
+      const benchData = await benchRes.json();
+      updateBenchmarksTab(benchData);
     }
 
   } catch (err) {
@@ -639,4 +654,135 @@ function logTerminal(msg) {
 function clearTerminal() {
   const term = document.getElementById('event-terminal');
   if (term) term.innerHTML = '<div class="term-line text-muted">[System] Terminal cleared.</div>';
+}
+
+// Categorical Bounded Sketches (Count-Min Sketch & HyperLogLog)
+function updateCategoricalSketches(catSketches) {
+  const tbody = document.getElementById('categorical-sketches-body');
+  if (!tbody || !catSketches) return;
+
+  const entries = Object.entries(catSketches);
+  if (entries.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center">No categorical sketches initialized.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = entries.map(([feat, stats]) => `
+    <tr>
+      <td class="font-bold">${feat}</td>
+      <td class="font-mono text-cyan">${Number(stats.estimated_cardinality || 0).toFixed(1)} distinct items</td>
+      <td class="font-mono">${Number(stats.total_counts || 0).toLocaleString()} observations</td>
+    </tr>
+  `).join('');
+}
+
+// Continuous Producer -> Consumer Auto-Streaming Pipeline
+function updatePipelineStatus(pipe) {
+  const badge = document.getElementById('pipeline-status-badge');
+  const textEl = document.getElementById('pipeline-metrics-text');
+  if (!pipe) return;
+
+  if (badge) {
+    if (pipe.auto_stream_active) {
+      badge.textContent = `STREAMING (${pipe.auto_stream_mode.toUpperCase()} @ ${pipe.auto_stream_rate_per_sec} tx/s)`;
+      badge.className = 'badge badge-normal';
+    } else {
+      badge.textContent = 'IDLE';
+      badge.className = 'badge badge-info';
+    }
+  }
+  if (textEl && pipe.consumer) {
+    const c = pipe.consumer;
+    textEl.textContent = `Consumer Running: ${c.is_running} | Transport: ${c.topic} | Emitted: ${pipe.auto_stream_emitted} | Consumed: ${c.consumed_count} | Queue Depth: ${c.queue_depth} | Errors: ${c.error_count}`;
+  }
+}
+
+async function startAutoStream(mode, rate) {
+  logTerminal(`[Pipeline] Starting continuous Producer -> Consumer stream (mode=${mode}, rate=${rate} tx/s)...`);
+  try {
+    const res = await fetch('/api/v1/stream/auto-stream/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ drift_mode: mode, rate_per_sec: rate })
+    });
+    const data = await res.json();
+    updatePipelineStatus(data);
+    logTerminal('[Pipeline] Live auto-stream started.');
+  } catch (err) {
+    logTerminal(`[Pipeline Error] ${err.message}`);
+  }
+}
+
+async function stopAutoStream() {
+  logTerminal('[Pipeline] Stopping continuous auto-stream...');
+  try {
+    const res = await fetch('/api/v1/stream/auto-stream/stop', { method: 'POST' });
+    const data = await res.json();
+    updatePipelineStatus(data);
+    logTerminal('[Pipeline] Auto-stream stopped.');
+  } catch (err) {
+    logTerminal(`[Pipeline Error] ${err.message}`);
+  }
+}
+
+// Experimental Benchmarks Tab (ML Engine Evaluation Suite)
+function updateBenchmarksTab(bench) {
+  if (!bench) return;
+  const delayBody = document.getElementById('benchmarks-delay-body');
+  const quantBody = document.getElementById('benchmarks-quantile-body');
+
+  if (delayBody && Array.isArray(bench.detection_delay_benchmarks)) {
+    if (bench.detection_delay_benchmarks.length === 0) {
+      delayBody.innerHTML = '<tr><td colspan="6" class="text-center">No benchmark data yet. Click "Re-Run Full Benchmark Suite".</td></tr>';
+    } else {
+      delayBody.innerHTML = bench.detection_delay_benchmarks.map(r => `
+        <tr>
+          <td class="font-bold">${r.drift_type}</td>
+          <td class="font-mono">${r.injection_index}</td>
+          <td class="font-mono">${r.first_detected_index}</td>
+          <td class="font-mono text-green">${r.detection_delay_records} records</td>
+          <td><span class="badge ${r.detected_successfully ? 'badge-normal' : 'badge-critical'}">${r.detected_successfully ? 'DETECTED' : 'MISSED'}</span></td>
+          <td><span class="badge badge-critical">${r.final_alert_severity}</span></td>
+        </tr>
+      `).join('');
+    }
+  }
+
+  if (quantBody && Array.isArray(bench.tdigest_quantile_accuracy)) {
+    if (bench.tdigest_quantile_accuracy.length === 0) {
+      quantBody.innerHTML = '<tr><td colspan="5" class="text-center">No quantile benchmark data yet.</td></tr>';
+    } else {
+      quantBody.innerHTML = bench.tdigest_quantile_accuracy.map(q => `
+        <tr>
+          <td class="font-bold font-mono">p${Math.round(Number(q.quantile) * 100).toString().padStart(2, '0')}</td>
+          <td class="font-mono">$${Number(q.exact).toFixed(2)}</td>
+          <td class="font-mono">$${Number(q.approx).toFixed(2)}</td>
+          <td class="font-mono">${Number(q.absolute_error).toFixed(4)}</td>
+          <td class="font-mono text-cyan">${(Number(q.relative_error) * 100).toFixed(2)}%</td>
+        </tr>
+      `).join('');
+    }
+  }
+}
+
+async function runLiveBenchmarks() {
+  const btn = document.getElementById('btn-run-benchmarks');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Running Benchmarks...';
+  }
+  logTerminal('[Benchmarks] Running full ML Engine controlled drift benchmark suite...');
+  try {
+    const res = await fetch('/api/v1/benchmarks/run', { method: 'POST' });
+    const data = await res.json();
+    updateBenchmarksTab(data);
+    logTerminal('[Benchmarks] Full benchmark suite completed and reports updated.');
+  } catch (err) {
+    logTerminal(`[Benchmarks Error] ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Re-Run Full Benchmark Suite';
+    }
+  }
 }

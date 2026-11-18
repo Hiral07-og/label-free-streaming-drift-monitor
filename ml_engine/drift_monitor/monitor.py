@@ -215,7 +215,11 @@ class StreamingDriftMonitor:
         if not self.categorical_features:
             self.categorical_features = [
                 c for c in reference_df.columns
-                if (pd.api.types.is_object_dtype(reference_df[c]) or isinstance(reference_df[c].dtype, pd.CategoricalDtype))
+                if (
+                    pd.api.types.is_object_dtype(reference_df[c])
+                    or pd.api.types.is_string_dtype(reference_df[c])
+                    or isinstance(reference_df[c].dtype, pd.CategoricalDtype)
+                )
                 and c not in [self.config.id_column, self.config.timestamp_column, target_column]
             ]
 

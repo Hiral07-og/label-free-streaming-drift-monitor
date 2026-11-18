@@ -133,13 +133,16 @@ flowchart TD
 | │   ├── [`drift.py`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/app/routers/drift.py) | `/status`, `/univariate`, `/multivariate`, `/events` endpoints | Person 2 |
 | │   ├── [`performance.py`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/app/routers/performance.py) | `/estimated`, `/labels`, `/history` endpoints | Person 2 |
 | │   ├── [`alerts.py`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/app/routers/alerts.py) | `/active`, `/recommendation`, `/history` endpoints | Person 2 |
-| │   └── [`retrain.py`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/app/routers/retrain.py) | `/status`, `/evaluate-candidate`, `/approve` endpoints | Person 2 |
+| │   ├── [`retrain.py`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/app/routers/retrain.py) | `/status`, `/evaluate-candidate`, `/approve` endpoints | Person 2 |
+| │   └── [`benchmarks.py`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/app/routers/benchmarks.py) | `/results`, `/run` connected ML Engine benchmark endpoints | Joint |
 | ├── `app/dashboard/static/` | Interactive Single-Page Application (SPA) Web Dashboard | Person 2 |
 | │   ├── [`index.html`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/app/dashboard/static/index.html) | Responsive HTML5 layout with KPI cards, Chart.js views, and tabs | Person 2 |
 | │   ├── [`styles.css`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/app/dashboard/static/styles.css) | Dark theme CSS with animated badges, tables, and modal panels | Person 2 |
 | │   └── [`app.js`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/app/dashboard/static/app.js) | Client logic, live polling, Chart.js charts, and action triggers | Person 2 |
 | ├── [`backend/tests/`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/tests) | 17 unit and integration tests for backend APIs and streaming (100% passing) | Person 2 |
 | └── [`backend/requirements.txt`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/backend/requirements.txt) | Pinned dependencies for FastAPI backend stack | Person 2 |
+| [`tests/test_e2e_integration.py`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/tests/test_e2e_integration.py) | 5 unified end-to-end integration tests connecting Person 1 + Person 2 | Joint |
+| [`main.py`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/main.py) | Unified Master CLI (`serve`, `demo`, `benchmark`, `test`) | Joint |
 | [`Dockerfile`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/Dockerfile) | Production multi-stage Docker build for backend and engine | Person 2 |
 | [`docker-compose.yml`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/docker-compose.yml) | Multi-container orchestration (Backend, Redpanda, Prometheus, Grafana) | Person 2 |
 | [`prometheus.yml`](file:///c:/Users/navde/OneDrive/Desktop/Hiral/Interactive-Model-Studio/prometheus.yml) | Prometheus scraping configuration targeting `backend:8000/metrics` | Person 2 |

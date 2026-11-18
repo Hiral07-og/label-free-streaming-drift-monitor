@@ -7,6 +7,7 @@ and candidate shadow-model retraining governance.
 
 from collections import deque
 import logging
+from pathlib import Path
 import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -63,6 +64,14 @@ class DriftService:
         self._labeled_buffer: deque = deque(maxlen=2000)
         self._candidate_models: Dict[str, BaselineModelWrapper] = {}
 
+        # Connected streaming consumer & auto-streamer state
+        self._consumer: Optional[Any] = None
+        self._auto_stream_active: bool = False
+        self._auto_stream_thread: Optional[threading.Thread] = None
+        self._auto_stream_mode: str = "none"
+        self._auto_stream_rate: float = 5.0
+        self._auto_stream_counter: int = 0
+
         # Initialize ML engine with benchmark dataset
         logger.info("Initializing StreamingDriftMonitor with financial benchmark reference...")
         self.benchmark = StreamingFinancialBenchmark(random_state=42)
@@ -73,6 +82,8 @@ class DriftService:
         monitor_config = MonitorConfig(
             window_size=settings.monitor_window_size,
             check_interval=settings.monitor_check_interval,
+            numerical_features=split.numerical_features,
+            categorical_features=split.categorical_features,
         )
         self.monitor = StreamingDriftMonitor(
             config=monitor_config,
@@ -177,20 +188,31 @@ class DriftService:
         drift_type: str = "none",
     ) -> Dict[str, Any]:
         """
-        Simulates an incoming streaming scenario:
+        Simulates an incoming streaming scenario using the ML Engine's SyntheticDriftInjector:
         - 'none': stationary standard traffic
-        - 'abrupt': sudden fraud wave / transaction surge
-        - 'gradual': slow inflation and risk drift
+        - 'abrupt': sudden step distribution shift (fraud wave)
+        - 'gradual': smooth sigmoid inflation & risk drift
+        - 'recurring': sinusoidal cyclical/seasonal shift
+        - 'feature_specific': isolated perturbation on specific features
         """
         base_df = self.benchmark._generate_distribution(num_records)
+        injector = SyntheticDriftInjector(random_state=int(time.time()) % 10000)
         if drift_type == "abrupt":
-            injector = SyntheticDriftInjector(random_state=42)
             exp = injector.inject_abrupt_drift(base_df, injection_idx=0, shift_magnitude=3.0)
             df = exp.stream_df
         elif drift_type == "gradual":
-            injector = SyntheticDriftInjector(random_state=42)
             exp = injector.inject_gradual_drift(
                 base_df, start_idx=0, duration=max(10, num_records), shift_magnitude=2.5
+            )
+            df = exp.stream_df
+        elif drift_type == "recurring":
+            exp = injector.inject_recurring_drift(
+                base_df, cycle_length=max(40, num_records // 2), shift_magnitude=2.5
+            )
+            df = exp.stream_df
+        elif drift_type == "feature_specific":
+            exp = injector.inject_feature_specific_drift(
+                base_df, injection_idx=0
             )
             df = exp.stream_df
         else:
@@ -577,3 +599,139 @@ class DriftService:
                 timestamp=time.time(),
                 message=f"Model successfully promoted to production by {approved_by}.",
             )
+
+    # ------------------------------------------------------------------
+    # Unified Pipeline: Producer -> Consumer Auto-Streamer & Benchmarks
+    # ------------------------------------------------------------------
+
+    def attach_consumer(self, consumer: Any) -> None:
+        """Links the live StreamingEventConsumer worker to DriftService."""
+        self._consumer = consumer
+
+    def start_auto_stream(
+        self,
+        drift_mode: str = "none",
+        rate_per_sec: float = 5.0,
+    ) -> Dict[str, Any]:
+        """
+        Starts continuous background streaming via StreamingEventProducer ->
+        StreamingEventConsumer -> DriftService -> StreamingDriftMonitor.
+        """
+        from backend.app.streaming.producer import StreamingEventProducer
+
+        self._auto_stream_mode = drift_mode
+        self._auto_stream_rate = max(0.5, min(100.0, float(rate_per_sec)))
+
+        if self._auto_stream_active:
+            return self.get_pipeline_status()
+
+        self._auto_stream_active = True
+        producer = StreamingEventProducer(enabled=settings.kafka_enabled)
+
+        def _stream_loop():
+            while self._auto_stream_active:
+                self._auto_stream_counter += 1
+                event = producer.generate_event(
+                    drift_mode=self._auto_stream_mode,
+                    record_idx=self._auto_stream_counter,
+                )
+                if self._consumer is not None and self._consumer.is_running:
+                    self._consumer.enqueue(event)
+                else:
+                    self.process_event(event)
+                time.sleep(1.0 / max(0.5, self._auto_stream_rate))
+
+        self._auto_stream_thread = threading.Thread(
+            target=_stream_loop,
+            daemon=True,
+            name="UnifiedAutoStreamProducer",
+        )
+        self._auto_stream_thread.start()
+        logger.info(
+            "Started continuous auto-stream (mode=%s, rate=%.1f rec/s)",
+            self._auto_stream_mode,
+            self._auto_stream_rate,
+        )
+        return self.get_pipeline_status()
+
+    def stop_auto_stream(self) -> Dict[str, Any]:
+        """Stops continuous background auto-streaming cleanly."""
+        self._auto_stream_active = False
+        if self._auto_stream_thread and self._auto_stream_thread.is_alive():
+            self._auto_stream_thread.join(timeout=2.0)
+        logger.info("Stopped continuous auto-stream.")
+        return self.get_pipeline_status()
+
+    def get_pipeline_status(self) -> Dict[str, Any]:
+        """Returns unified streaming pipeline status (Producer + Consumer)."""
+        consumer_status = (
+            self._consumer.get_status()
+            if self._consumer is not None
+            else {
+                "is_running": False,
+                "kafka_enabled": settings.kafka_enabled,
+                "topic": "direct_sync",
+                "consumed_count": 0,
+                "queue_depth": 0,
+                "error_count": 0,
+                "last_consumed_at": None,
+            }
+        )
+        return {
+            "auto_stream_active": self._auto_stream_active,
+            "auto_stream_mode": self._auto_stream_mode,
+            "auto_stream_rate_per_sec": self._auto_stream_rate,
+            "auto_stream_emitted": self._auto_stream_counter,
+            "consumer": consumer_status,
+        }
+
+    def get_benchmark_results(self) -> Dict[str, Any]:
+        """
+        Loads the ML Engine's experimental benchmark reports (Detection Delay,
+        t-digest Quantile Accuracy, and Markdown Benchmark Summary) so the
+        backend API and Web Dashboard expose the complete evaluation results.
+        """
+        repo_root = Path(__file__).resolve().parents[3]
+        reports_dir = repo_root / "ml_engine" / "drift_monitor" / "benchmarks" / "reports"
+
+        delay_csv = reports_dir / "detection_delay_benchmarks.csv"
+        quantile_csv = reports_dir / "tdigest_quantile_accuracy.csv"
+        report_md = reports_dir / "BENCHMARK_REPORT.md"
+
+        detection_delays = (
+            pd.read_csv(delay_csv).to_dict(orient="records")
+            if delay_csv.exists()
+            else []
+        )
+        quantile_accuracy = (
+            pd.read_csv(quantile_csv).to_dict(orient="records")
+            if quantile_csv.exists()
+            else []
+        )
+        markdown_summary = (
+            report_md.read_text(encoding="utf-8")
+            if report_md.exists()
+            else "No benchmark report generated yet. Trigger POST /api/v1/benchmarks/run to execute."
+        )
+
+        return {
+            "status": "AVAILABLE" if (detection_delays or quantile_accuracy) else "NOT_GENERATED",
+            "reports_directory": str(reports_dir),
+            "detection_delay_benchmarks": detection_delays,
+            "tdigest_quantile_accuracy": quantile_accuracy,
+            "markdown_report": markdown_summary,
+        }
+
+    def run_live_benchmarks(self) -> Dict[str, Any]:
+        """
+        Executes the full ML Engine experimental benchmark suite live and
+        regenerates CSV and Markdown reports.
+        """
+        from ml_engine.drift_monitor.benchmarks.generate_report import (
+            generate_benchmark_reports,
+        )
+
+        repo_root = Path(__file__).resolve().parents[3]
+        reports_dir = repo_root / "ml_engine" / "drift_monitor" / "benchmarks" / "reports"
+        generate_benchmark_reports(output_dir=str(reports_dir))
+        return self.get_benchmark_results()
