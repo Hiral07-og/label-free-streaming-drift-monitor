@@ -287,8 +287,11 @@ class StreamingDriftMonitor:
         rec_id = str(record.get(self.config.id_column, f"rec_{self.records_processed}"))
         ts = record.get(self.config.timestamp_column, time.time())
 
-        # 1. Model inference
-        pred, prob = self.model.predict_record(record)
+        # 1. Model inference (if a trained model is attached)
+        if self.model is not None and getattr(self.model, "is_fitted", False):
+            pred, prob = self.model.predict_record(record)
+        else:
+            pred, prob = 0, 0.5
 
         # 2. Update delayed evaluator pending queue
         self.delayed_evaluator.record_prediction(
