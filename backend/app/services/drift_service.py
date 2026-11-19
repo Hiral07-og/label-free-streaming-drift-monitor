@@ -52,11 +52,11 @@ class DriftService:
     """Singleton service encapsulating the live streaming drift monitor."""
 
     _instance: Optional["DriftService"] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __init__(self, db_manager: Optional[DatabaseManager] = None):
         self.db = db_manager or DatabaseManager()
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.start_time = time.time()
         self.records_processed = 0
 
@@ -248,6 +248,103 @@ class DriftService:
             "alarms_triggered": alarms,
             "latest_severity": latest_sev,
             "total_processed_overall": self.records_processed,
+        }
+
+    def process_uploaded_csv(self, file_content: bytes, filename: str = "upload.csv") -> Dict[str, Any]:
+        """
+        Parses an uploaded CSV file, streams each row through bounded sketches and drift detectors,
+        and generates an end-to-end evaluation report card for academic/production presentation.
+        """
+        import io
+        try:
+            df = pd.read_csv(io.BytesIO(file_content))
+        except Exception as e:
+            raise ValueError(f"Could not parse CSV file: {str(e)}")
+
+        if df.empty:
+            raise ValueError("The uploaded CSV file is empty.")
+
+        start_time = time.time()
+        alarms_triggered = 0
+
+        for idx, row in df.iterrows():
+            rec_dict = row.to_dict()
+            rec_id = str(rec_dict.get("record_id", f"up_{idx:05d}"))
+            ts = float(rec_dict.get("timestamp", time.time()))
+
+            tx = TransactionEvent(
+                record_id=rec_id,
+                timestamp=ts,
+                tx_amount=float(rec_dict.get("tx_amount", rec_dict.get("amount", 50.0))),
+                sender_tx_count_1h=float(rec_dict.get("sender_tx_count_1h", 1.0)),
+                sender_risk_score=float(rec_dict.get("sender_risk_score", 0.1)),
+                location_entropy=float(rec_dict.get("location_entropy", 0.2)),
+                dest_novelty_score=float(rec_dict.get("dest_novelty_score", 0.5)),
+                time_delta_last_tx=float(rec_dict.get("time_delta_last_tx", 300.0)),
+                network_degree=float(rec_dict.get("network_degree", 1.0)),
+                device_type=str(rec_dict.get("device_type", "web_browser")),
+                merchant_category=str(rec_dict.get("merchant_category", "groceries")),
+                is_fraud=int(rec_dict.get("is_fraud", rec_dict.get("label", 0))) if ("is_fraud" in rec_dict or "label" in rec_dict) else None,
+            )
+            res = self.process_event(tx)
+            if res.streaming_drift_detected:
+                alarms_triggered += 1
+
+        elapsed = time.time() - start_time
+        throughput = len(df) / max(0.001, elapsed)
+
+        # Run comprehensive periodic drift check across the ingested data
+        with self.lock:
+            self.monitor._run_periodic_evaluation()
+            summary = self.monitor.get_monitoring_summary()
+            univariate = self.get_univariate_metrics()
+            perf = self.get_performance_estimate()
+            alert_status = self.monitor.latest_alert_status
+            retrain_rec = self.monitor.latest_retrain_recommendation
+
+        features_report = []
+        for feat in univariate:
+            psi_status = "STABLE"
+            if feat.psi > 0.25:
+                psi_status = "CRITICAL_DRIFT"
+            elif feat.psi > 0.1:
+                psi_status = "MODERATE_SHIFT"
+
+            features_report.append({
+                "feature_name": feat.feature_name,
+                "ks_p_value": round(feat.ks_p_value, 5),
+                "psi": round(feat.psi, 4),
+                "psi_status": psi_status,
+                "is_significant": feat.is_significant,
+                "running_mean": round(feat.running_mean, 2),
+                "p50": round(feat.tdigest_median, 2),
+                "p95": round(feat.tdigest_p95, 2),
+            })
+
+        alert_severity_str = alert_status.severity.value if hasattr(alert_status.severity, "value") else str(alert_status.severity)
+        drift_detected = alert_status.severity != AlertSeverity.NORMAL
+
+        return {
+            "status": "SUCCESS",
+            "filename": filename,
+            "records_analyzed": len(df),
+            "elapsed_seconds": round(elapsed, 3),
+            "throughput_rec_per_sec": round(throughput, 1),
+            "streaming_alarms_triggered": alarms_triggered,
+            "composite_drift_score": round(alert_status.composite_score, 4),
+            "alert_severity": alert_severity_str,
+            "drift_detected": drift_detected,
+            "drifted_features": alert_status.drifted_features,
+            "summary_message": alert_status.summary_message,
+            "cbpe_estimated_accuracy": round(perf.estimated_accuracy, 4) if perf.estimated_accuracy is not None else None,
+            "cbpe_estimated_brier_score": round(perf.estimated_brier_score, 4) if perf.estimated_brier_score is not None else None,
+            "sketch_memory_bytes": summary.get("memory", {}).get("sketches_total_bytes", 0),
+            "sketch_memory_kb": round(summary.get("memory", {}).get("sketches_total_bytes", 0) / 1024, 2),
+            "retraining_recommended": retrain_rec.should_retrain,
+            "retraining_urgency": retrain_rec.urgency.value if hasattr(retrain_rec.urgency, "value") else str(retrain_rec.urgency),
+            "recommended_action": retrain_rec.recommended_action,
+            "features_analysis": features_report,
+            "total_system_records": self.records_processed,
         }
 
     def get_drift_status(self) -> DriftStatusResponse:

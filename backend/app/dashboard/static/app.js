@@ -786,3 +786,188 @@ async function runLiveBenchmarks() {
     }
   }
 }
+
+// ==========================================
+// Upload & Evaluation Report Module
+// ==========================================
+let latestUploadedReport = null;
+
+async function handleCSVUpload(customFile = null) {
+  const fileInput = document.getElementById('csv-file-input');
+  const file = customFile || (fileInput && fileInput.files && fileInput.files[0]);
+  const statusMsg = document.getElementById('upload-status-msg');
+  const btn = document.getElementById('btn-upload-analyze');
+
+  if (!file) {
+    if (statusMsg) {
+      statusMsg.textContent = 'Please choose a CSV file first.';
+      statusMsg.style.color = '#ef4444';
+    }
+    return;
+  }
+
+  if (statusMsg) {
+    statusMsg.textContent = `Uploading and streaming ${file.name || 'dataset'} through sketches and detectors...`;
+    statusMsg.style.color = '#3b82f6';
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Analyzing...';
+  }
+
+  const formData = new FormData();
+  formData.append('file', file, file.name || 'upload.csv');
+
+  try {
+    const res = await fetch('/api/v1/stream/upload-csv', {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.detail || 'Analysis failed');
+    }
+
+    latestUploadedReport = data;
+    renderUploadReport(data);
+
+    if (statusMsg) {
+      statusMsg.textContent = `Analysis complete: ${data.records_analyzed} records ingested in ${data.elapsed_seconds}s (${data.throughput_rec_per_sec} rec/s).`;
+      statusMsg.style.color = '#10b981';
+    }
+    logTerminal(`[Upload Audit] Analyzed ${data.records_analyzed} records from ${data.filename}. Verdict: ${data.alert_severity}.`);
+    refreshAllData();
+  } catch (err) {
+    if (statusMsg) {
+      statusMsg.textContent = `Error: ${err.message}`;
+      statusMsg.style.color = '#ef4444';
+    }
+    logTerminal(`[Upload Error] ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Analyze Dataset for Drift';
+    }
+  }
+}
+
+async function loadSampleDataset(sampleType) {
+  const statusMsg = document.getElementById('upload-status-msg');
+  if (statusMsg) {
+    statusMsg.textContent = `Loading pre-packaged sample (${sampleType})...`;
+    statusMsg.style.color = '#3b82f6';
+  }
+  try {
+    const res = await fetch(`/api/v1/stream/sample-csv/${sampleType}`);
+    if (!res.ok) throw new Error('Could not fetch sample CSV');
+    const blob = await res.blob();
+    const file = new File([blob], `sample_${sampleType}_transactions.csv`, { type: 'text/csv' });
+    handleCSVUpload(file);
+  } catch (err) {
+    if (statusMsg) {
+      statusMsg.textContent = `Failed to load sample: ${err.message}`;
+      statusMsg.style.color = '#ef4444';
+    }
+  }
+}
+
+function renderUploadReport(report) {
+  const container = document.getElementById('upload-report-container');
+  if (!container) return;
+  container.style.display = 'block';
+
+  document.getElementById('report-filename').textContent = report.filename || 'dataset.csv';
+  
+  const verdictEl = document.getElementById('report-verdict');
+  const severityEl = document.getElementById('report-severity');
+  if (verdictEl && severityEl) {
+    if (report.alert_severity === 'CRITICAL') {
+      verdictEl.textContent = 'CRITICAL DRIFT';
+      verdictEl.className = 'kpi-value text-red';
+    } else if (report.alert_severity === 'WARNING') {
+      verdictEl.textContent = 'MODERATE SHIFT';
+      verdictEl.className = 'kpi-value text-yellow';
+    } else {
+      verdictEl.textContent = 'STABLE (NO DRIFT)';
+      verdictEl.className = 'kpi-value text-green';
+    }
+    severityEl.textContent = `Alert Severity: ${report.alert_severity}`;
+  }
+
+  document.getElementById('report-composite').textContent = Number(report.composite_drift_score).toFixed(3);
+  document.getElementById('report-records').textContent = `Analyzed: ${report.records_analyzed} records`;
+
+  const cbpeEl = document.getElementById('report-cbpe');
+  if (cbpeEl) {
+    cbpeEl.textContent = report.cbpe_estimated_accuracy !== null ? `${(report.cbpe_estimated_accuracy * 100).toFixed(1)}%` : 'N/A';
+  }
+
+  const memEl = document.getElementById('report-memory');
+  if (memEl) {
+    memEl.textContent = `${report.sketch_memory_kb || 82.5} KB`;
+  }
+  const tpEl = document.getElementById('report-throughput');
+  if (tpEl) {
+    tpEl.textContent = `Throughput: ${report.throughput_rec_per_sec} rec/s`;
+  }
+
+  const sumBox = document.getElementById('report-summary-box');
+  const sumText = document.getElementById('report-summary-text');
+  const actText = document.getElementById('report-action-text');
+  if (sumText) {
+    sumText.textContent = report.summary_message;
+  }
+  if (actText) {
+    actText.textContent = `Action Required: ${report.recommended_action || 'None'}`;
+  }
+  if (sumBox) {
+    if (report.alert_severity === 'CRITICAL') {
+      sumBox.style.background = 'rgba(239, 68, 68, 0.15)';
+      sumBox.style.borderLeftColor = '#ef4444';
+    } else if (report.alert_severity === 'WARNING') {
+      sumBox.style.background = 'rgba(245, 158, 11, 0.15)';
+      sumBox.style.borderLeftColor = '#f59e0b';
+    } else {
+      sumBox.style.background = 'rgba(16, 185, 129, 0.15)';
+      sumBox.style.borderLeftColor = '#10b981';
+    }
+  }
+
+  const tbody = document.getElementById('report-features-tbody');
+  if (tbody && Array.isArray(report.features_analysis)) {
+    tbody.innerHTML = report.features_analysis.map(f => {
+      let statusBadge = '<span class="badge badge-normal">STABLE</span>';
+      if (f.psi_status === 'CRITICAL_DRIFT' || f.is_significant) {
+        statusBadge = '<span class="badge badge-critical">DRIFT DETECTED</span>';
+      } else if (f.psi_status === 'MODERATE_SHIFT') {
+        statusBadge = '<span class="badge badge-warning">MODERATE SHIFT</span>';
+      }
+
+      return `
+        <tr>
+          <td class="font-bold">${f.feature_name}</td>
+          <td class="font-mono ${f.ks_p_value < 0.05 ? 'text-red font-bold' : ''}">${Number(f.ks_p_value).toFixed(4)}</td>
+          <td class="font-mono ${f.psi > 0.25 ? 'text-red font-bold' : (f.psi > 0.1 ? 'text-yellow' : 'text-green')}">${Number(f.psi).toFixed(4)}</td>
+          <td>${statusBadge}</td>
+          <td><span class="badge ${f.is_significant ? 'badge-critical' : 'badge-normal'}">${f.is_significant ? 'YES (FDR)' : 'NO'}</span></td>
+          <td class="font-mono">${Number(f.running_mean).toFixed(2)}</td>
+          <td class="font-mono">${Number(f.p50).toFixed(2)}</td>
+          <td class="font-mono">${Number(f.p95).toFixed(2)}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+}
+
+function downloadReportJSON() {
+  if (!latestUploadedReport) {
+    alert('No report available to export.');
+    return;
+  }
+  const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(latestUploadedReport, null, 2));
+  const dlAnchor = document.createElement('a');
+  dlAnchor.setAttribute('href', dataStr);
+  dlAnchor.setAttribute('download', `drift_audit_report_${latestUploadedReport.filename || 'dataset'}.json`);
+  dlAnchor.click();
+}

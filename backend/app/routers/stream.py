@@ -4,8 +4,10 @@ Handles synchronous record ingestion, batch ingestion, streaming simulation,
 and streaming consumer health diagnostics.
 """
 
+import os
 from typing import Any, Dict
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from backend.app.schemas.events import (
@@ -125,3 +127,39 @@ def stop_auto_stream(
     Cleanly stops background event emission.
     """
     return service.stop_auto_stream()
+
+
+@router.post("/upload-csv", summary="Upload CSV Dataset for Drift & Performance Analysis")
+async def upload_csv_dataset(
+    file: UploadFile = File(..., description="CSV file of streaming transactions to analyze"),
+    service: DriftService = Depends(get_drift_service),
+) -> Dict[str, Any]:
+    """
+    Uploads a CSV file containing transactions.
+    Streams each row through bounded sketches (Welford, t-digest, Count-Min, HyperLogLog, Reservoir),
+    evaluates univariate & multivariate drift, estimates model accuracy via CBPE,
+    and returns a full diagnostic report card.
+    """
+    try:
+        content = await file.read()
+        return service.process_uploaded_csv(content, filename=file.filename or "upload.csv")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/sample-csv/{sample_type}", summary="Download Sample CSV Dataset")
+def get_sample_csv(sample_type: str = "normal"):
+    """
+    Returns sample test CSV data for immediate demonstration:
+    - 'normal': Stationary in-distribution transactions
+    - 'drifted': Abruptly drifted out-of-distribution transactions
+    """
+    file_map = {
+        "normal": os.path.join("data", "sample_normal_transactions.csv"),
+        "drifted": os.path.join("data", "sample_drifted_transactions.csv"),
+    }
+    path = file_map.get(sample_type)
+    if not path or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Sample dataset not found")
+    return FileResponse(path, media_type="text/csv", filename=f"sample_{sample_type}_transactions.csv")
+

@@ -121,6 +121,31 @@ class TestUnifiedEndToEndIntegration(unittest.TestCase):
         self.assertIn("Benchmarks & Eval", dash.text)
         self.assertIn("Count-Min Sketch & HyperLogLog", dash.text)
         self.assertIn("Continuous Streaming Pipeline", dash.text)
+        self.assertIn("Upload & Report", dash.text)
+
+    def test_06_csv_upload_and_results_generation(self):
+        """Verify CSV dataset upload, sketch streaming, drift evaluation, and sample downloading."""
+        sample_path = os.path.join(os.path.dirname(__file__), "..", "data", "sample_drifted_transactions.csv")
+        self.assertTrue(os.path.exists(sample_path), "Sample CSV file should exist")
+
+        with open(sample_path, "rb") as f:
+            res = self.client.post(
+                "/api/v1/stream/upload-csv",
+                files={"file": ("drifted_test.csv", f, "text/csv")},
+            )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["status"], "SUCCESS")
+        self.assertEqual(data["records_analyzed"], 150)
+        self.assertTrue(data["drift_detected"])
+        self.assertEqual(data["alert_severity"], "CRITICAL")
+        self.assertIsNotNone(data["cbpe_estimated_accuracy"])
+        self.assertGreater(len(data["features_analysis"]), 0)
+
+        # Test sample CSV download endpoint
+        sample_res = self.client.get("/api/v1/stream/sample-csv/normal")
+        self.assertEqual(sample_res.status_code, 200)
+        self.assertIn("text/csv", sample_res.headers["content-type"])
 
 
 if __name__ == "__main__":

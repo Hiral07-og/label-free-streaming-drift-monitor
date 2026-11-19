@@ -55,6 +55,10 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path><circle cx="18" cy="7" r="2"></circle><circle cx="6" cy="11" r="2"></circle></svg>
           Benchmarks & Eval
         </button>
+        <button class="nav-item" data-tab="tab-upload">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          Upload & Report
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -567,6 +571,107 @@
                 <tr><td colspan="5" class="text-center">Loading t-digest quantile benchmarks...</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 8: UPLOAD & EVALUATION REPORT -->
+      <section id="tab-upload" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <h3>Upload Dataset for Immediate Drift & Performance Audit</h3>
+            <span class="card-tag">CSV Streaming Ingestion</span>
+          </div>
+          <p class="description">
+            Upload any custom transaction CSV file to stream it through bounded sketches (t-digest, Count-Min, HyperLogLog, Reservoir),
+            evaluate feature-level & multivariate drift, estimate accuracy via CBPE, and produce an official audit report.
+          </p>
+
+          <div style="display: flex; gap: 15px; margin: 20px 0; align-items: center; flex-wrap: wrap;">
+            <input type="file" id="csv-file-input" accept=".csv" style="padding: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff; flex: 1; min-width: 260px;" />
+            <button class="btn btn-primary" id="btn-upload-analyze" onclick="handleCSVUpload()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Analyze Dataset for Drift
+            </button>
+          </div>
+
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
+            <span style="font-size: 0.85rem; color: #9ca3af;">Or test instantly with pre-packaged samples:</span>
+            <button class="btn btn-secondary" onclick="loadSampleDataset('normal')">
+              📥 Load In-Distribution Sample (Normal)
+            </button>
+            <button class="btn btn-secondary" onclick="loadSampleDataset('drifted')">
+              ⚠️ Load Out-of-Distribution Sample (Drifted)
+            </button>
+          </div>
+          <div id="upload-status-msg" style="margin-top: 10px; font-size: 0.9rem; font-weight: 500;"></div>
+        </div>
+
+        <!-- REPORT CARD CONTAINER (Initially Hidden) -->
+        <div id="upload-report-container" style="display: none; margin-top: 20px;">
+          <div class="card" style="border: 1px solid rgba(59, 130, 246, 0.4); box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
+            <div class="card-header" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
+              <div>
+                <h3 id="report-title" style="margin: 0; font-size: 1.3rem;">Evaluation Report: <span id="report-filename">upload.csv</span></h3>
+                <span id="report-subtitle" style="font-size: 0.85rem; color: #9ca3af;">Generated live via Label-Free Streaming Drift Monitor</span>
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <button class="btn btn-secondary" onclick="downloadReportJSON()">📥 Export JSON Report</button>
+                <button class="btn btn-secondary" onclick="window.print()">🖨️ Print / Save PDF</button>
+              </div>
+            </div>
+
+            <!-- KPI Row -->
+            <div class="kpi-grid" style="margin-top: 20px;">
+              <div class="kpi-card">
+                <div class="kpi-label">Drift Verdict</div>
+                <div id="report-verdict" class="kpi-value text-green">STABLE</div>
+                <div id="report-severity" class="kpi-sub">Alert Level: NORMAL</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-label">Composite Drift Score</div>
+                <div id="report-composite" class="kpi-value">0.000</div>
+                <div id="report-records" class="kpi-sub">Records: 0</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-label">CBPE Estimated Accuracy</div>
+                <div id="report-cbpe" class="kpi-value text-blue">--</div>
+                <div class="kpi-sub">Label-Free Estimate</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-label">Bounded Sketch Memory</div>
+                <div id="report-memory" class="kpi-value text-purple">-- KB</div>
+                <div id="report-throughput" class="kpi-sub">Throughput: -- rec/s</div>
+              </div>
+            </div>
+
+            <!-- Summary Box -->
+            <div id="report-summary-box" style="margin: 20px 0; padding: 15px 20px; border-radius: 8px; background: rgba(59, 130, 246, 0.1); border-left: 4px solid #3b82f6;">
+              <h4 id="report-summary-heading" style="margin: 0 0 5px 0;">Executive Summary</h4>
+              <p id="report-summary-text" style="margin: 0; font-size: 0.95rem; color: #e5e7eb;"></p>
+              <div id="report-action-text" style="margin-top: 8px; font-size: 0.9rem; font-weight: 600; color: #f59e0b;"></div>
+            </div>
+
+            <!-- Features Drift Breakdown Table -->
+            <h4 style="margin: 20px 0 10px 0;">Feature-Level Drift Diagnostics (KS-Test, PSI, & t-digest Quantiles)</h4>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Feature</th>
+                    <th>KS p-value</th>
+                    <th>PSI Score</th>
+                    <th>PSI Status</th>
+                    <th>Significant?</th>
+                    <th>Running Mean</th>
+                    <th>Median (P50)</th>
+                    <th>95th Pct (P95)</th>
+                  </tr>
+                </thead>
+                <tbody id="report-features-tbody">
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
